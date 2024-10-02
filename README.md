@@ -14,7 +14,7 @@ Basically, you will need the tags: `name`, `on`, `env`, and `jobs`, where:
 
 ### Example of GH Workflow:
 
-```Workflow
+```yaml
 name: Deploy to Production
 
 on:
@@ -89,7 +89,7 @@ Here is a detailed example:
 
 This section defines general settings and information about the deployment environment and repositories used.
 
-```Kubernetes
+```yaml
 - Kubernetes:
 - sourceRepo: #Defines the application's repository.
   - name: infinitepay-project #The name of the application's repository.
