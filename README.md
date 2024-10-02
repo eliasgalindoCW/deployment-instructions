@@ -14,6 +14,47 @@ Basically, you will need the tags: `name`, `on`, `env`, and `jobs`, where:
 
 Here is an example of a Workflow:
 
+```Workflow
+name: Deploy to Production
+
+on:
+  push:
+
+env:
+  ENVIRONMENT: 'production'
+  GOPRIVATE: github.com/cloudwalk
+
+jobs:
+  build:
+    permissions:
+      contents: 'write'
+      id-token: 'write'
+    runs-on: cloudwalk-k8s-runner
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GHA_PAT }}
+    - id: auth
+      uses: google-github-actions/auth@v2
+      with:
+        access_token_lifetime: 1800s
+        token_format: access_token
+        workload_identity_provider: 'projects/39758643659/locations/global/workloadIdentityPools/github-workload-identity-pool/providers/github-actions-identity-provider'
+        service_account: 'gke-github-actions@infinitepay-production.iam.gserviceaccount.com'
+    - id: gcloud-setup
+      name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    - id: github-builder
+      uses: cloudwalk/github-builder@v2
+      env:
+        GHA_PAT: ${{ secrets.GHA_PAT }}
+      with:
+        environment: 'production'
+        gha_pat: ${{ secrets.GHA_PAT }}
+        docker_buildkit: true
+        docker_secrets: '["id=GHA_PAT"]'
+```
+
 ## Dockerfile
 
 After creating the Workflow responsible for sending the files to the Staging and Production environment in Argo CD, it's time to create a Dockerfile.
@@ -43,86 +84,84 @@ After that, you will need to create the YAML manifests inside the `./config` fol
 
 Here is a detailed example:
 
-### 1. Base Section:
+### 1. Kubernetes YAML file:
 
 This section defines general settings and information about the deployment environment and repositories used.
 
-- `sourceRepo`: Defines the application's repository.
-  - `name: infinitepay-scfi`: The name of the application's repository.
-  - `org: cloudwalk`: The name of the organization hosting the repository (on GitHub or another provider).
+```Kubernetes
+- Kubernetes:
+- sourceRepo: #Defines the application's repository.
+  - name: infinitepay-project #The name of the application's repository.
+  - org: cloudwalk #The name of the organization hosting the repository (on GitHub or another provider).
 
-- `monoRepo`: Configures the monorepo and configuration files:
-  - `repository: monorepo-gitops`: Repository where the GitOps infrastructure is stored (probably used with ArgoCD).
-  - `appsFolder: apps-config`: Folder where the application's configuration files are maintained in the monorepo.
-  - `argoCDValues: helms/argocd/values.yaml`: Helm values file used by ArgoCD to manage deployment.
+- monoRepo: #Configures the monorepo and configuration files:
+  - repository: monorepo-gitops #Repository where the GitOps infrastructure is stored (probably used with ArgoCD).
+  - appsFolder: apps-config #Folder where the application's configuration files are maintained in the monorepo.
+  - argoCDValues: helms/argocd/values.yaml #Helm values file used by ArgoCD to manage deployment.
 
-- `containerRegistry`: Where the application's container images are stored:
-  - `url: gcr.io/infinitepay-production`: The Google Container Registry (GCR) used to store the application's container images.
+- containerRegistry: #Where the application's container images are stored:
+  - url: gcr.io/infinitepay-production #The Google Container Registry (GCR) used to store the application's container images.
 
-- `deployConfig`: Deployment settings for the application:
-  - `cluster: infinitepay-production`: The name of the Kubernetes production cluster where the application will be deployed.
-  - `environment: production`: The environment where the application will be deployed (production).
-  - `steps`:
-    - `push`: Sends the container images to the registry.
-    - `versioning`: Defines versions for the images or the deployment.
-    - `build`: Builds the container images.
-    - `deploy`: Deploys to Kubernetes.
+- deployConfig: #Deployment settings for the application:
+  - cluster: infinitepay-production #The name of the Kubernetes production cluster where the application will be deployed.
+  - environment: production #The environment where the application will be deployed (production).
+  - steps:
+    - push #Sends the container images to the registry.
+    - versioning #Defines versions for the images or the deployment.
+    - build #Builds the container images.
+    - deploy #Deploys to Kubernetes.
 
-- `service`:
-  - `asmRevision: asm-managed-stable`: This suggests that the environment is using Anthos Service Mesh (ASM) from Google Cloud for managing services and networking.
+- service:
+  - asmRevision: asm-managed-stable #This suggests that the environment is using Anthos Service Mesh (ASM) from Google Cloud for managing services and networking.
 
-### 2. Applications Section:
+- name: infinitepay-project #Application name.
 
-This is where the applications to be deployed are configured. In this case, there is a single application: `infinitepay-scfi`.
+- imageRepoName: infinitepay-project #The name of the container image repository for this application.
 
-- `name: infinitepay-scfi`: Application name.
+- kind: deployment #The type of Kubernetes resource to be deployed (in this case, a Deployment that controls the execution of the application's pods).
 
-- `imageRepoName: infinitepay-scfi`: The name of the container image repository for this application.
+- replicas: 1 #Defines that only 1 replica (pod) of the application will be executed.
 
-- `kind: deployment`: The type of Kubernetes resource to be deployed (in this case, a `Deployment` that controls the execution of the application's pods).
+- secretsManager: #Configurations for secret management:
+  - enabled: true #Enables the use of secrets.
+  - provider: gcpsm #The secret management provider is the Google Cloud Secret Manager (GCPSM).
+  - secretsName: production-infinitepay-project #The name of the secret to be used in the production environment.
 
-- `replicas: 1`: Defines that only 1 replica (pod) of the application will be executed.
+- resources: #Configures the resource limits and requests for the application:
+  - limits: #Defines the maximum use of resources:
+    - cpu: 100m
+    - memory: 128Mi
+  - requests: #Defines the minimum resources needed:
+    - cpu: 50m
+    - memory: 64Mi
 
-- `secretsManager`: Configurations for secret management:
-  - `enabled: true`: Enables the use of secrets.
-  - `provider: gcpsm`: The secret management provider is the Google Cloud Secret Manager (GCPSM).
-  - `secretsName: production-infinitepay-scfi`: The name of the secret to be used in the production environment.
+- hpa: #Configures the Horizontal Pod Autoscaler (HPA), which dynamically adjusts the number of replicas based on CPU usage:
+  - resource.name: cpu #HPA will monitor CPU usage.
+  - resource.threshold: 30 #Horizontal scaling will occur when CPU usage exceeds 30%.
+  - maxReplicas: 1 #The maximum number of replicas is 1 (no scaling, as the limit is 1).
+  - minReplicas: 1 #The minimum number of replicas is 1.
 
-- `resources`: Configures the resource limits and requests for the application:
-  - `limits`: Defines the maximum use of resources:
-    - `cpu: 100m`: CPU limit of 100 millicores.
-    - `memory: 128Mi`: Memory limit of 128 MiB.
-  - `requests`: Defines the minimum resources needed:
-    - `cpu: 50m`: Minimum CPU request of 50 millicores.
-    - `memory: 64Mi`: Minimum memory request of 64 MiB.
+- livenessProbe: #Defines how Kubernetes will check if the application is "alive" and working:
+  - failureThreshold: 60 #The number of consecutive failures that can occur before the pod is considered "unhealthy".
+  - periodSeconds: 5 #Interval between each liveness check attempt (every 5 seconds).
+  - timeoutSeconds: 15 #Maximum time for the liveness check response.
+  - httpGet: #Sends an HTTP request to check the health of the application:
+    - path: / #Path of the application to be checked.
+    - port: 8000 #The port to be used (8000).
+    - scheme: HTTP #Uses HTTP to check the application.
 
-- `hpa`: Configures the Horizontal Pod Autoscaler (HPA), which dynamically adjusts the number of replicas based on CPU usage:
-  - `resource.name: cpu`: HPA will monitor CPU usage.
-  - `resource.threshold: 30`: Horizontal scaling will occur when CPU usage exceeds 30%.
-  - `maxReplicas: 1`: The maximum number of replicas is 1 (no scaling, as the limit is 1).
-  - `minReplicas: 1`: The minimum number of replicas is 1.
+- readinessProbe: #Checks if the application is ready to receive traffic:- Configurations similar to livenessProbe to check if the application is ready.
 
-- `livenessProbe`: Defines how Kubernetes will check if the application is "alive" and working:
-  - `failureThreshold: 60`: The number of consecutive failures that can occur before the pod is considered "unhealthy".
-  - `periodSeconds: 5`: Interval between each liveness check attempt (every 5 seconds).
-  - `timeoutSeconds: 15`: Maximum time for the liveness check response.
-  - `httpGet`: Sends an HTTP request to check the health of the application:
-    - `path: /`: Path of the application to be checked.
-    - `port: 8000`: The port to be used (8000).
-    - `scheme: HTTP`: Uses HTTP to check the application.
-
-- `readinessProbe`: Checks if the application is ready to receive traffic:
-  - Configurations similar to `livenessProbe` to check if the application is ready.
-
-- `service`: Service (network) settings:
-  - `istio: true`: Indicates that Istio is enabled to manage the application's network communication.
-  - `ports`: Defines the port exposed by the container:
-    - `containerPort: 8000`: The application is running on port 8000.
-    - `name: scfi`: Service name.
-    - `appProtocol: http`: The communication protocol is HTTP.
-  - `virtualservice`:
-    - `gateway: internal`: The service is available internally only.
-    - `hosts`: List of allowed hosts:
-      - `infinitepay-scfi.services.production.cloudwalk.network`: The host that will access the service on the production network.
+- service: #Service (network) settings:
+  - istio: true #Indicates that Istio is enabled to manage the application's network communication.
+  - ports: #Defines the port exposed by the container
+    - containerPort: 8000 #The application is running on port 8000.
+    - name: project #Service name.
+    - appProtocol: http #The communication protocol is HTTP.
+  - virtualservice:
+    - gateway: internal #The service is available internally only.
+    - hosts: #List of allowed hosts:
+      - infinitepay-project.services.production.cloudwalk.network #The host that will access the service on the production network.
+```
 
 These are general and basic instructions for deploying an application to staging and production environments. You will need to adapt your application to its specific needs.
