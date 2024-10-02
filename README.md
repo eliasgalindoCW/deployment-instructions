@@ -12,7 +12,7 @@ Basically, you will need the tags: `name`, `on`, `env`, and `jobs`, where:
 - `env`: containing the environment variables of the project.
 - `jobs`: the tasks that will be executed by the Workflow.
 
-Here is an example of a Workflow:
+### Example of GH Workflow:
 
 ```Workflow
 name: Deploy to Production
@@ -61,6 +61,7 @@ After creating the Workflow responsible for sending the files to the Staging and
 
 A Dockerfile is a text file that contains a series of instructions that Docker uses to create a Docker image. An image is like a "snapshot" of a complete environment where the application will run. Each instruction in the Dockerfile represents a step to configure that environment. Here's a basic explanation of the main components of a Dockerfile:
 
+### Example of Dockerfile
 ```Dockerfile
 # Choose the base image
 FROM ubuntu:20.04
@@ -84,7 +85,7 @@ After that, you will need to create the YAML manifests inside the `./config` fol
 
 Here is a detailed example:
 
-### 1. Kubernetes YAML file:
+### Example of Kubernetes YAML file:
 
 This section defines general settings and information about the deployment environment and repositories used.
 
